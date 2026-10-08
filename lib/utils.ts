@@ -22,10 +22,30 @@ export const resolveImage = (
   images: Record<string, string>
 ): string | null => {
   if (!target) return null;
-  const key1 = normLoose(target);
-  const key2 = normLoose(target.split('/').pop() || '');
-  const path = images[key1] || images[key2];
-  return path ? `/notes/${path}` : null;
+
+  const raw = decodeURIComponent(target).trim();
+  const filename = raw.split('/').pop() || raw;
+
+  const keysToTry = [
+    raw.toLowerCase(),
+    filename.toLowerCase(),
+    normLoose(raw),
+    normLoose(filename),
+  ];
+
+  for (const k of keysToTry) {
+    if (images[k]) {
+      return `/notes/${images[k]}`;
+    }
+  }
+
+  // Fallback: if target already starts with Images/ or notes/
+  if (raw.startsWith('Images/') || raw.startsWith('notes/')) {
+    const cleanPath = raw.replace(/^notes\//, '');
+    return `/notes/${cleanPath}`;
+  }
+
+  return null;
 };
 
 export const nodeRadius = (degree: number, orphan: boolean): number => {

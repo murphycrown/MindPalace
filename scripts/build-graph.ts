@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-// Mind Palace — graph builder (TypeScript port)
+// Mind Palace - graph builder
 // Recursively scans notes/ and emits a public/graph-data.json.
 
 import fs from 'node:fs';
@@ -8,6 +8,7 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { glob } from 'glob';
 import matter from 'gray-matter';
+
 const REPO_URL = 'https://github.com/murphycrown/CCNA_PREPARATION.git';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -135,12 +136,12 @@ interface GraphData {
 }
 
 async function main() {
-  // Sync notes from GitHub repository if requested or notes/ is empty/outdated
+  // Sync notes from GitHub repository if needed
   try {
     const tempDir = path.join(ROOT, 'temp_sync_repo');
     if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
-    console.log(`fetching CCNA preparation notes from ${REPO_URL}...`);
-    execSync(`git clone ${REPO_URL} "${tempDir}"`, { stdio: 'pipe' });
+    console.log('fetching CCNA preparation notes from ' + REPO_URL + '...');
+    execSync('git clone ' + REPO_URL + ' "' + tempDir + '"', { stdio: 'pipe' });
 
     const repoNotes = path.join(tempDir, 'notes');
     if (fs.existsSync(repoNotes)) {
@@ -212,7 +213,6 @@ async function main() {
     if (frontmatter.title) addAlias(frontmatter.title);
 
     // Wikilinks [[target]] or [[target|alias]]
-    // Negative lookbehind skips ![[...]] embeds
     const linkRe = /(?<!!)\[\[([^\]]+)\]\]/g;
     let lm: RegExpExecArray | null;
     while ((lm = linkRe.exec(body))) {
@@ -346,15 +346,19 @@ async function main() {
       return a.name.localeCompare(b.name);
     });
 
-  // Image / asset index: normalized-basename -> posix path under notes/
+  // Image / asset index: map multiple keys for resolution
   const images: Record<string, string> = {};
   for (const file of await listAssets(NOTES)) {
     const posix = path.relative(NOTES, file).split(path.sep).join('/');
-    const key = normLoose(path.basename(file));
-    if (!images[key]) images[key] = posix;
+    const keyLoose = normLoose(path.basename(file));
+    const keyExact = path.basename(file).toLowerCase();
+    const keyRelative = posix.toLowerCase();
+
+    if (!images[keyLoose]) images[keyLoose] = posix;
+    if (!images[keyExact]) images[keyExact] = posix;
+    if (!images[keyRelative]) images[keyRelative] = posix;
   }
 
-  // Escape < for XSS protection
   const graph: GraphData = {
     nodes: [...nodeMap.values()],
     links: edges,
@@ -379,9 +383,9 @@ async function main() {
   const orphanCount = orphans.size;
   const folderCount = realFolders.length;
 
-  console.log(`scanning notes/ ... ${noteCount} note${noteCount === 1 ? '' : 's'}, ${canvasCount} canvas${canvasCount === 1 ? '' : 's'}`);
-  console.log(`links: ${linkCount}   orphans: ${orphanCount}   folders: ${folderCount}`);
-  console.log(`wrote ${path.relative(ROOT, OUT)}`);
+  console.log('scanning notes/ ... ' + noteCount + ' notes, ' + canvasCount + ' canvases');
+  console.log('links: ' + linkCount + '   orphans: ' + orphanCount + '   folders: ' + folderCount);
+  console.log('wrote ' + path.relative(ROOT, OUT));
 }
 
 main().catch((err) => {
