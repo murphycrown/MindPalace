@@ -1,6 +1,17 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  Node,
+  Edge,
+  Handle,
+  Position,
+  NodeProps,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import { CanvasData } from '@/lib/graph-types';
 
 interface CanvasViewerProps {
@@ -8,12 +19,106 @@ interface CanvasViewerProps {
   onClose: () => void;
 }
 
+// Custom Node for Canvas cards/notes
+const CanvasNodeComponent: React.FC<NodeProps> = ({ data }) => {
+  const nodeData = data as {
+    label?: string;
+    type?: string;
+    text?: string;
+    file?: string;
+    url?: string;
+    color?: string;
+  };
+
+  return (
+    <div className="bg-slate-800/95 border border-slate-700/80 rounded-xl p-3 shadow-xl text-xs text-slate-200 min-w-[180px] max-w-[400px] h-full flex flex-col justify-between">
+      <Handle type="target" position={Position.Top} className="!bg-amber-400 !w-2.5 !h-2.5" />
+      <Handle type="target" position={Position.Left} className="!bg-amber-400 !w-2.5 !h-2.5" />
+
+      <div>
+        <div className="flex items-center justify-between gap-2 border-b border-slate-700/60 pb-1.5 mb-2">
+          <span className="font-semibold text-amber-300 truncate">
+            {nodeData.label || nodeData.file || nodeData.type || 'Card'}
+          </span>
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-900/80 text-slate-400 border border-slate-800">
+            {nodeData.type || 'text'}
+          </span>
+        </div>
+
+        {nodeData.text && (
+          <div className="text-slate-300 whitespace-pre-wrap font-sans text-xs leading-relaxed max-h-[300px] overflow-y-auto pr-1">
+            {nodeData.text}
+          </div>
+        )}
+
+        {nodeData.file && (
+          <div className="text-blue-400 font-mono text-[11px] bg-slate-900/60 p-1.5 rounded border border-slate-800 flex items-center gap-1">
+            <span>📄</span>
+            <span className="truncate">{nodeData.file}</span>
+          </div>
+        )}
+
+        {nodeData.url && (
+          <a
+            href={nodeData.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-blue-400 underline font-mono text-[11px] truncate block hover:text-blue-300"
+          >
+            🔗 {nodeData.url}
+          </a>
+        )}
+      </div>
+
+      <Handle type="source" position={Position.Bottom} className="!bg-amber-400 !w-2.5 !h-2.5" />
+      <Handle type="source" position={Position.Right} className="!bg-amber-400 !w-2.5 !h-2.5" />
+    </div>
+  );
+};
+
+const nodeTypes = {
+  canvasCard: CanvasNodeComponent,
+};
+
 export const CanvasViewer: React.FC<CanvasViewerProps> = ({
   canvas,
   onClose,
 }) => {
-  const nodes = canvas.data?.nodes || [];
-  const edges = canvas.data?.edges || [];
+  const rawNodes = canvas.data?.nodes || [];
+  const rawEdges = canvas.data?.edges || [];
+
+  const flowNodes: Node[] = useMemo(() => {
+    return rawNodes.map((n) => ({
+      id: n.id,
+      type: 'canvasCard',
+      position: { x: n.x, y: n.y },
+      style: {
+        width: n.width || 250,
+        height: n.height || 150,
+      },
+      data: {
+        label: n.label,
+        type: n.type,
+        text: n.text,
+        file: n.file,
+        url: n.url,
+        color: n.color,
+      },
+    }));
+  }, [rawNodes]);
+
+  const flowEdges: Edge[] = useMemo(() => {
+    return rawEdges.map((e) => ({
+      id: e.id,
+      source: e.fromNode,
+      target: e.toNode,
+      label: e.label,
+      animated: true,
+      style: { stroke: '#fbbf24', strokeWidth: 2 },
+      labelStyle: { fill: '#fef3c7', fontWeight: 600, fontSize: 11 },
+      labelBgStyle: { fill: '#1e293b', rx: 4, ry: 4 },
+    }));
+  }, [rawEdges]);
 
   return (
     <div className="fixed inset-0 z-40 bg-slate-950/95 backdrop-blur-md flex flex-col p-6 animate-in fade-in duration-200">
@@ -36,35 +141,24 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
         </button>
       </div>
 
-      {/* Canvas Viewport */}
-      <div className="flex-1 relative overflow-auto my-4 bg-slate-900/50 rounded-xl border border-slate-800/80 p-8">
-        {nodes.length === 0 ? (
+      {/* Canvas Viewport with React Flow */}
+      <div className="flex-1 relative my-4 bg-slate-900/80 rounded-xl border border-slate-800 overflow-hidden">
+        {flowNodes.length === 0 ? (
           <div className="flex items-center justify-center h-full text-slate-500 text-sm">
             Canvas is empty or has no node data
           </div>
         ) : (
-          <div className="relative min-h-[500px] min-w-[800px]">
-            {nodes.map((n) => (
-              <div
-                key={n.id}
-                style={{
-                  position: 'absolute',
-                  left: n.x,
-                  top: n.y,
-                  width: n.width,
-                  height: n.height,
-                }}
-                className="rounded-lg bg-slate-800/90 border border-slate-700 p-3 shadow-lg flex flex-col text-xs text-slate-200 overflow-hidden"
-              >
-                <div className="font-semibold text-amber-300 mb-1 border-b border-slate-700/60 pb-1 truncate">
-                  {n.label || n.type}
-                </div>
-                {n.text && <p className="text-slate-300 whitespace-pre-wrap truncate">{n.text}</p>}
-                {n.file && <p className="text-blue-400 font-mono text-[10px] truncate">{n.file}</p>}
-                {n.url && <p className="text-blue-400 font-mono text-[10px] truncate">{n.url}</p>}
-              </div>
-            ))}
-          </div>
+          <ReactFlow
+            nodes={flowNodes}
+            edges={flowEdges}
+            nodeTypes={nodeTypes}
+            fitView
+            fitViewOptions={{ padding: 0.2 }}
+            colorMode="dark"
+          >
+            <Background color="#334155" gap={20} size={1} />
+            <Controls className="bg-slate-900 border-slate-800 fill-slate-200" />
+          </ReactFlow>
         )}
       </div>
     </div>

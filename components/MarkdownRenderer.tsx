@@ -20,7 +20,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   const renderedElements = useMemo(() => {
     if (!content) return null;
 
-    const lines = content.split('\n');
+    const lines = content.split(/\r?\n/);
     const elements: React.ReactNode[] = [];
     let inCodeBlock = false;
     let codeBlockBuffer: string[] = [];
@@ -110,19 +110,22 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       }
 
       // Step 2: Highlighting ==highlight==
-      return parts.map((part, pIdx) => {
-        if (typeof part !== 'string') return part;
+      const hlProcessed: React.ReactNode[] = [];
+      parts.forEach((part, pIdx) => {
+        if (typeof part !== 'string') {
+          hlProcessed.push(part);
+          return;
+        }
 
         const hlRegex = /==([^=]+)==/g;
-        const subParts: React.ReactNode[] = [];
         let hlLast = 0;
         let hlMatch: RegExpExecArray | null;
 
         while ((hlMatch = hlRegex.exec(part)) !== null) {
           if (hlMatch.index > hlLast) {
-            subParts.push(part.substring(hlLast, hlMatch.index));
+            hlProcessed.push(part.substring(hlLast, hlMatch.index));
           }
-          subParts.push(
+          hlProcessed.push(
             <mark
               key={`${keyPrefix}-hl-${pIdx}-${hlMatch.index}`}
               className="bg-amber-500/30 text-amber-200 px-1 rounded border border-amber-500/40"
@@ -134,11 +137,66 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
         }
 
         if (hlLast < part.length) {
-          subParts.push(part.substring(hlLast));
+          hlProcessed.push(part.substring(hlLast));
+        }
+      });
+
+      // Step 3: Inline code formatting `code`
+      const codeProcessed: React.ReactNode[] = [];
+      hlProcessed.forEach((item, cIdx) => {
+        if (typeof item !== 'string') {
+          codeProcessed.push(item);
+          return;
         }
 
-        return <React.Fragment key={`${keyPrefix}-p-${pIdx}`}>{subParts}</React.Fragment>;
+        const codeRegex = /`([^`]+)`/g;
+        let codeLast = 0;
+        let codeMatch: RegExpExecArray | null;
+
+        while ((codeMatch = codeRegex.exec(item)) !== null) {
+          if (codeMatch.index > codeLast) {
+            codeProcessed.push(item.substring(codeLast, codeMatch.index));
+          }
+          codeProcessed.push(
+            <code
+              key={`${keyPrefix}-code-${cIdx}-${codeMatch.index}`}
+              className="bg-slate-800 text-amber-300 font-mono text-[11px] px-1.5 py-0.5 rounded border border-slate-700/80"
+            >
+              {codeMatch[1]}
+            </code>
+          );
+          codeLast = codeRegex.lastIndex;
+        }
+
+        if (codeLast < item.length) {
+          codeProcessed.push(item.substring(codeLast));
+        }
       });
+
+      return codeProcessed;
+    };
+
+    const isTableLine = (str: string) => {
+      const trimmed = str.trim();
+      return trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.length > 2;
+    };
+
+    const isTableSeparator = (str: string) => {
+      const trimmed = str.trim();
+      if (!isTableLine(trimmed)) return false;
+      const cells = trimmed
+        .slice(1, -1)
+        .split('|')
+        .map((c) => c.trim());
+      return cells.every((c) => /^:?-+:?$/.test(c));
+    };
+
+    const parseTableRowCells = (str: string) => {
+      return str
+        .trim()
+        .slice(1, -1)
+        .split('|')
+        .map((c) => c.trim());
     };
 
     for (let i = 0; i < lines.length; i++) {
@@ -165,6 +223,64 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
 
       if (inCodeBlock) {
         codeBlockBuffer.push(line);
+        continue;
+      }
+
+      // Check for Markdown Table block starting at current index i
+      if (
+        isTableLine(line) &&
+        i + 1 < lines.length &&
+        isTableSeparator(lines[i + 1])
+      ) {
+        const headerCells = parseTableRowCells(line);
+        i++; // skip header line
+        i++; // skip separator line
+
+        const bodyRows: string[][] = [];
+        while (i < lines.length && isTableLine(lines[i])) {
+          bodyRows.push(parseTableRowCells(lines[i]));
+          i++;
+        }
+        i--;
+
+        elements.push(
+          <div
+            key={`table-${i}`}
+            className="my-4 overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/60 shadow-sm"
+          >
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-800/80 border-b border-slate-700 text-slate-200">
+                  {headerCells.map((headerCell, cellIdx) => (
+                    <th
+                      key={`th-${i}-${cellIdx}`}
+                      className="px-3 py-2 font-semibold border-r border-slate-700/60 last:border-r-0"
+                    >
+                      {processFormattedText(headerCell, `th-${i}-${cellIdx}`)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800 text-slate-300">
+                {bodyRows.map((rowCells, rowIdx) => (
+                  <tr
+                    key={`tr-${i}-${rowIdx}`}
+                    className="hover:bg-slate-800/40 transition-colors"
+                  >
+                    {rowCells.map((cellText, cellIdx) => (
+                      <td
+                        key={`td-${i}-${rowIdx}-${cellIdx}`}
+                        className="px-3 py-2 border-r border-slate-800/60 last:border-r-0"
+                      >
+                        {processFormattedText(cellText, `td-${i}-${rowIdx}-${cellIdx}`)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
         continue;
       }
 
@@ -231,28 +347,48 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       }
 
       // Headings (H1 - H6)
-      if (line.startsWith('# ')) {
-        elements.push(
-          <h1 key={`h1-${i}`} className="text-xl font-bold text-slate-100 my-3 border-b border-slate-800 pb-1">
-            {processFormattedText(line.substring(2), `h1-${i}`)}
-          </h1>
-        );
-        continue;
-      }
-      if (line.startsWith('## ')) {
-        elements.push(
-          <h2 key={`h2-${i}`} className="text-lg font-bold text-slate-200 my-2">
-            {processFormattedText(line.substring(3), `h2-${i}`)}
-          </h2>
-        );
-        continue;
-      }
-      if (line.startsWith('### ')) {
-        elements.push(
-          <h3 key={`h3-${i}`} className="text-base font-semibold text-slate-300 my-2">
-            {processFormattedText(line.substring(4), `h3-${i}`)}
-          </h3>
-        );
+      const headingMatch = line.match(/^(#{1,6})\s+(.*)$/);
+      if (headingMatch) {
+        const level = headingMatch[1].length;
+        const headingText = headingMatch[2];
+
+        if (level === 1) {
+          elements.push(
+            <h1 key={`h1-${i}`} className="text-xl font-bold text-slate-100 my-3 border-b border-slate-800 pb-1">
+              {processFormattedText(headingText, `h1-${i}`)}
+            </h1>
+          );
+        } else if (level === 2) {
+          elements.push(
+            <h2 key={`h2-${i}`} className="text-lg font-bold text-slate-200 my-2">
+              {processFormattedText(headingText, `h2-${i}`)}
+            </h2>
+          );
+        } else if (level === 3) {
+          elements.push(
+            <h3 key={`h3-${i}`} className="text-base font-semibold text-slate-300 my-2">
+              {processFormattedText(headingText, `h3-${i}`)}
+            </h3>
+          );
+        } else if (level === 4) {
+          elements.push(
+            <h4 key={`h4-${i}`} className="text-sm font-semibold text-slate-300 my-1.5">
+              {processFormattedText(headingText, `h4-${i}`)}
+            </h4>
+          );
+        } else if (level === 5) {
+          elements.push(
+            <h5 key={`h5-${i}`} className="text-xs font-semibold text-slate-400 my-1">
+              {processFormattedText(headingText, `h5-${i}`)}
+            </h5>
+          );
+        } else {
+          elements.push(
+            <h6 key={`h6-${i}`} className="text-xs font-medium text-slate-400 my-1 uppercase tracking-wider">
+              {processFormattedText(headingText, `h6-${i}`)}
+            </h6>
+          );
+        }
         continue;
       }
 
