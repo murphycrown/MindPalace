@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Mind Palace</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#15171c; --panel2:#1b1e26;
+    --fg:#e7e9ee; --muted:#8b93a1; --border:#262a33;
+    --accent:#7aa2f7; --hl:#9d7aff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--fg);
+    font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  #app{position:relative;width:100vw;height:100vh}
+  #graph{width:100%;height:100%;display:block;cursor:grab;background:
+    radial-gradient(1200px 800px at 70% 20%, rgba(122,162,247,.06), transparent 60%)}
+  #graph:active{cursor:grabbing}
+
+  .link{stroke:#3a4150;stroke-opacity:.45;stroke-width:1.2px}
+  .link.hl{stroke:var(--hl);stroke-opacity:.9;stroke-width:1.6px}
+  .link.dim{stroke-opacity:.07}
+
+  .node circle{stroke:#0f1115;stroke-width:2px;cursor:pointer;transition:opacity .15s, r .15s}
+  .node text{fill:#d6d9e0;font-size:11px;pointer-events:none;
+    paint-order:stroke;stroke:#0f1115;stroke-width:3px;stroke-linejoin:round;
+    opacity:1;transition:opacity .15s;font-weight:500}
+  .node.orphan circle{stroke-dasharray:3 3;opacity:.55}
+  .node.orphan text{opacity:0}
+  .node.orphan:hover text,.node.orphan.sel text{opacity:.85}
+  .node.dim{opacity:.13}
+  .node.dim text{opacity:0}
+  .node.dim:hover{opacity:.6}
+  .node.sel circle{stroke:var(--hl);stroke-width:3px}
+  .node.hover circle{stroke:var(--accent)}
+  .zoomed-out .node text{opacity:0}
+  .zoomed-out .node:hover text,.zoomed-out .node.sel text{opacity:.9}
+
+  header{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:14px;
+    padding:12px 16px;pointer-events:none;z-index:5;
+    background:linear-gradient(180deg,rgba(15,17,21,.92),rgba(15,17,21,0))}
+  header>*{pointer-events:auto}
+  header strong{font-size:15px;letter-spacing:.3px}
+  header strong span{color:var(--accent)}
+  #count{color:var(--muted);font-size:12px}
+  #search{background:var(--panel2);border:1px solid var(--border);color:var(--fg);
+    border-radius:8px;padding:6px 10px;font-size:13px;min-width:180px;outline:none}
+  #search:focus{border-color:var(--accent)}
+  #reset{background:var(--panel2);border:1px solid var(--border);color:var(--fg);
+    border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
+  #reset:hover{border-color:var(--accent)}
+  #legend{display:flex;flex-wrap:wrap;gap:8px 14px;margin-left:auto;max-width:60%}
+  .leg{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+  .leg i{width:10px;height:10px;border-radius:50%;display:inline-block}
+
+  /* Back button (top-left), shown only while the side panel is open */
+  #back{display:none;border:none;background:none;color:var(--muted);font-size:13px;
+    align-items:center;gap:6px;padding:4px 8px;border-radius:6px;cursor:pointer}
+  #back.show{display:inline-flex}
+  #back:hover{color:var(--fg);background:var(--panel2)}
+
+  #panel{position:absolute;top:0;right:0;height:100%;width:min(440px,42vw);
+    background:var(--panel);border-left:1px solid var(--border);
+    transform:translateX(105%);transition:transform .22s ease;z-index:6;
+    display:flex;flex-direction:column;overflow:hidden}
+  #panel.open{transform:translateX(0);box-shadow:-20px 0 60px rgba(0,0,0,.4)}
+  .panel-head{display:flex;align-items:flex-start;gap:10px;padding:16px 18px 8px}
+  #p-title{margin:0;font-size:18px;line-height:1.25;font-weight:650;flex:1;min-width:0}
+  .p-head-actions{display:inline-flex;align-items:center;gap:4px}
+  .p-btn{background:none;border:none;color:var(--muted);cursor:pointer;
+    padding:2px 6px;border-radius:6px;font-size:16px;line-height:1}
+  .p-btn:hover{color:var(--fg);background:var(--panel2)}
+  #p-close{font-size:22px}
+  #p-full{font-size:14px}
+  .meta{display:flex;flex-wrap:wrap;gap:6px;padding:0 18px 10px}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);
+    background:var(--panel2);border:1px solid var(--border);padding:3px 8px;border-radius:999px}
+  .chip i{width:8px;height:8px;border-radius:50%}
+  .chip.tag{color:var(--accent)}
+  .chip.miss{color:#f0a35e;border-color:#5a4632}
+  #p-links{padding:0 18px 10px;display:flex;flex-direction:column;gap:10px}
+  .lb{font-size:12px}
+  .lb-h{color:var(--muted);display:block;margin-bottom:5px;text-transform:uppercase;letter-spacing:.6px;font-size:10px}
+  .chiprow{display:flex;flex-wrap:wrap;gap:6px}
+  .nodechip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);
+    border:1px solid var(--border);color:var(--fg);border-radius:8px;padding:4px 10px;
+    font-size:12px;cursor:pointer}
+  .nodechip::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c);display:inline-block}
+  .nodechip:hover{border-color:var(--c)}
+  #p-content{padding:6px 18px 24px;overflow:auto;font-size:14px;line-height:1.6;flex:1 1 auto}
+  #p-content h1{font-size:17px;margin:16px 0 8px}
+  #p-content h2{font-size:15px;margin:14px 0 6px}
+  #p-content h3{font-size:14px;margin:12px 0 6px}
+  #p-content p{margin:8px 0}
+  #p-content ul,#p-content ol{margin:8px 0;padding-left:22px}
+  #p-content li{margin:3px 0}
+  #p-content a{color:var(--accent);text-decoration:none}
+  #p-content a:hover{text-decoration:underline}
+  #p-content a.wl{background:rgba(122,162,247,.12);padding:1px 6px;border-radius:6px;
+    border:1px solid rgba(122,162,247,.25)}
+  #p-content code{background:var(--panel2);padding:1px 5px;border-radius:5px;font-size:12.5px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  #p-content pre{background:var(--panel2);border:1px solid var(--border);border-radius:8px;
+    padding:10px 12px;overflow:auto;margin:10px 0}
+  #p-content pre code{background:none;padding:0;font-size:12.5px}
+  #p-content .tag{color:var(--accent);font-size:12px}
+  #p-content .empty{color:var(--muted);font-style:italic}
+
+  /* Drag-to-resize the side panel (left edge) */
+  .resize-handle{position:absolute;left:0;top:0;bottom:0;width:12px;cursor:col-resize;
+    z-index:8;touch-action:none}
+  .resize-handle::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;
+    transform:translateX(-50%);background:var(--border);border-radius:1px}
+
+  /* Embedded images & transcluded notes */
+  #p-content .embed, #fs-content .embed{display:block;max-width:100%;height:auto;
+    border:1px solid var(--border);border-radius:8px;margin:10px 0}
+  .embed-note{border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin:12px 0;
+    background:var(--panel2)}
+  .embed-note-head{font-size:11px;text-transform:uppercase;letter-spacing:.5px;
+    color:var(--muted);margin-bottom:8px}
+  .embed-note .embed-note{border:0;background:transparent;padding:8px 0;margin:8px 0}
+
+  /* Fullscreen overlay (note/canvas) */
+  #fullscreen{display:none;position:absolute;top:0;left:0;right:0;bottom:0;
+    background:var(--bg);z-index:11;flex-direction:column;overflow:hidden}
+  #fullscreen.on{display:flex}
+  .fs-head{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);
+    background:var(--panel);position:sticky;top:0;z-index:2}
+  #fs-back{background:none;border:none;color:var(--muted);font-size:13px;align-items:center;gap:6px;
+    padding:4px 8px;border-radius:6px;cursor:pointer}
+  #fs-back:hover{color:var(--fg);background:var(--panel2)}
+  #fs-title{margin:0;font-size:17px;font-weight:650;flex:1;min-width:0}
+  #fs-content{flex:1 1 auto;overflow:auto;position:relative;background:var(--bg)}
+  #app.fullscreen #graph{opacity:.12;pointer-events:none}
+  #app.fullscreen #panel{display:none}
+  #app.fullscreen header{display:none}
+  #app.fullscreen #hint{display:none}
+
+  /* Canvas Viewer */
+  #canvas-controls{position:absolute;top:10px;right:10px;z-index:12;
+    display:flex;gap:4px;pointer-events:auto;background:var(--panel);border-radius:8px;padding:6px;box-shadow:0 2px 10px rgba(0,0,0,.3)}
+  #canvas-controls button{background:var(--panel2);border:1px solid var(--border);color:var(--fg);
+    border-radius:6px;padding:4px 8px;font-size:14px;cursor:pointer;min-width:30px}
+  #canvas-controls button:hover{border-color:var(--accent)}
+
+  .canvas-svg{display:block;width:100%;height:100%}
+  .canvas-node rect{fill:var(--panel2);stroke:var(--border);stroke-width:1px;rx:6;ry:6}
+  .canvas-node image{pointer-events:none}
+  .canvas-node foreignObject{pointer-events:none}
+  .canvas-node text{fill:var(--fg);font-size:13px;user-select:none}
+  .canvas-edge path{stroke-width:2px;fill:none}
+  .canvas-edge text{fill:var(--fg);font-size:10px;user-select:none;stroke:var(--bg);stroke-width:3px;paint-order:stroke fill;stroke-linejoin:round}
+  .canvas-edge marker{fill:currentColor}
+
+  #hint{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
+    color:var(--muted);font-size:11px;pointer-events:none;opacity:.7;text-align:center}
+</style>
+</head>
+<body>
+<div id="app">
+  <svg id="graph"></svg>
+  <header>
+    <button id="back" title="Back to graph view">← Back</button>
+    <strong>Mind <span>Palace</span></strong>
+    <span id="count"></span>
+    <input id="search" type="search" placeholder="Search notes…"/>
+    <button id="reset">Reset view</button>
+    <div id="legend"></div>
+  </header>
+  <aside id="panel">
+    <div class="resize-handle" id="rsz" title="Drag to resize"></div>
+    <div class="panel-head">
+      <h2 id="p-title"></h2>
+      <div class="p-head-actions">
+        <button id="p-full" class="p-btn" title="Full screen view">⛶</button>
+        <button id="p-close" class="p-btn" title="Close">&times;</button>
+      </div>
+    </div>
+    <div class="meta" id="p-meta"></div>
+    <div id="p-links"></div>
+    <div id="p-content"></div>
+  </aside>
+  <div id="fullscreen" aria-hidden="true">
+    <div class="fs-head">
+      <button id="fs-back" title="Back to graph view">← Back</button>
+      <h2 id="fs-title"></h2>
+      <div id="canvas-controls" style="display:none;">
+        <button id="canvas-zoom-in" title="Zoom In">+</button>
+        <button id="canvas-zoom-out" title="Zoom Out">−</button>
+        <button id="canvas-zoom-fit" title="Fit to Screen">⟲</button>
+      </div>
+    </div>
+    <div id="fs-content"></div>
+  </div>
+  <div id="hint">drag nodes &middot; scroll to zoom &middot; click a note to read</div>
+</div>
+<script>__D3_SOURCE__</script>
+<script>
+const GRAPH = __GRAPH_JSON__;
+const nodes = GRAPH.nodes, links = GRAPH.links, contents = GRAPH.contents,
+      aliases = GRAPH.aliases, images = GRAPH.images || {}, canvases = GRAPH.canvases || {};
+const byId = Object.fromEntries(nodes.map(n => [n.id, n]));
+
+const outE = {}, inE = {};
+nodes.forEach(n => { outE[n.id] = []; inE[n.id] = []; });
+links.forEach(l => {
+  const s = typeof l.source === 'object' ? l.source.id : l.source;
+  const t = typeof l.target === 'object' ? l.target.id : l.target;
+  outE[s].push(t); inE[t].push(s);
+});
+const neighbors = id => { const s = new Set(outE[id]); inE[id].forEach(x => s.add(x)); return s; };
+
+const norm = s => String(s||'').toLowerCase().replace(/\s+/g,' ').trim();
+const normLoose = s => norm(s).replace(/[^\w\s]/g,'').replace(/\s+/g,' ').trim();
+const resolveTarget = t => aliases[norm(t)] || aliases[normLoose(t)] || null;
+const IMG_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif|ico)$/i;
+function resolveImage(tgt){
+  if (!tgt) return null;
+  const key1 = normLoose(tgt);
+  const key2 = normLoose(tgt.split('/').pop());
+  const p = images[key1] || images[key2];
+  return p ? '../notes/'+p : null;
+}
+
+function nodeR(d){ return d.orphan ? 5 : 6 + Math.sqrt(d.degree||0)*2.6; }
+
+const svg = d3.select('#graph');
+const app = document.getElementById('app');
+let w = window.innerWidth, h = window.innerHeight;
+svg.attr('viewBox', `0 0 ${w} ${h}`);
+const g = svg.append('g');
+
+const zoom = d3.zoom().scaleExtent([0.2,4]).on('zoom', ev => {
+  g.attr('transform', ev.transform);
+  svg.classed('zoomed-out', ev.transform.k < 0.6);
+});
+svg.call(zoom);
+
+const link = g.append('g').selectAll('line').data(links).join('line').attr('class','link');
+const node = g.append('g').selectAll('g').data(nodes).join('g')
+  .attr('class', d => 'node' + (d.orphan ? ' orphan' : ' labeled'))
+  .call(d3.drag().on('start', dragstart).on('drag', dragged).on('end', dragend));
+node.append('circle').attr('r', nodeR).attr('fill', d => d.color).append('title').text(d => d.label);
+node.append('text').attr('dy', d => -nodeR(d) - 4).text(d => d.label);
+
+const sim = d3.forceSimulation(nodes)
+  .force('link', d3.forceLink(links).id(d => d.id).distance(72).strength(0.5))
+  .force('charge', d3.forceManyBody().strength(-260))
+  .force('center', d3.forceCenter(w/2, h/2))
+  .force('collide', d3.forceCollide(d => nodeR(d) + 9))
+  .on('tick', ticked);
+
+function ticked(){
+  link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+  node.attr('transform', d => `translate(${d.x},${d.y})`);
+}
+function dragstart(ev,d){ if(!ev.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; }
+function dragged(ev,d){ d.fx=ev.x; d.fy=ev.y; }
+function dragend(ev,d){ if(!ev.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }
+
+let selectedId = null, hoverId = null, matches = null, focus = null;
+let fullscreenFromPanel = false;   // back from fullscreen restores the side panel
+
+node.on('mouseover',(ev,d)=>{ hoverId=d.id; applyState(); })
+    .on('mouseout', ()=>{ hoverId=null; applyState(); })
+    .on('click',(ev,d)=>{ ev.stopPropagation();
+      if (d.type === 'canvas') openCanvas(d); else selectNode(d); });
+svg.on('click', clearSelection);
+
+function applyState(){
+  focus = selectedId ? new Set([selectedId, ...neighbors(selectedId)]) : null;
+  node.attr('class', d => {
+    let c = 'node' + (d.orphan ? ' orphan' : ' labeled');
+    if(!emphasized(d)) c += ' dim';
+    if(d.id === selectedId) c += ' sel';
+    else if(d.id === hoverId) c += ' hover';
+    return c;
+  });
+  link.attr('class', d => {
+    if(selectedId) return (d.source.id===selectedId||d.target.id===selectedId) ? 'link hl' : 'link dim';
+    if(matches) return (matches.has(d.source.id)&&matches.has(d.target.id)) ? 'link' : 'link dim';
+    if(hoverId) return (d.source.id===hoverId||d.target.id===hoverId) ? 'link hl' : 'link';
+    return 'link';
+  });
+}
+function emphasized(d){
+  if(selectedId) return focus.has(d.id);
+  if(matches) return matches.has(d.id);
+  return true;
+}
+function selectNode(d){
+  selectedId = d.id; renderPanel(d); applyState(); refreshBack();
+  const k = d3.zoomTransform(svg.node()).k;
+  svg.transition().duration(500).call(zoom.transform,
+    d3.zoomIdentity.translate(w/2 - d.x*k, h/2 - d.y*k).scale(k));
+}
+function clearSelection(){
+  selectedId=null; focus=null;
+  panel.classList.remove('open');
+  hideFullscreen();
+  refreshBack();
+  applyState();
+}
+function hideFullscreen(){ app.classList.remove('fullscreen'); fs.classList.remove('on'); }
+// Back to the graph view (used by Escape / when there's no panel to restore).
+function goHome(){ hideFullscreen(); clearSelection(); }
+// From the side panel, Full view → fullscreen; Back → restore the panel.
+function toFullscreen(d){
+  if(!d || d.orphan) return;
+  fullscreenFromPanel = true;
+  app.classList.add('fullscreen');
+  fsTitle.textContent = d.label;
+  fsContent.innerHTML = renderMarkdown(contents[d.id]||'');
+  fs.classList.add('on');
+  canvasControls.style.display = 'none';
+}
+function backFromFullscreen(){
+  hideFullscreen();
+  if(fullscreenFromPanel && selectedId && byId[selectedId]){
+    // restore the side panel with the same note re-rendered (and its width)
+    renderPanel(byId[selectedId]);
+  }
+  fullscreenFromPanel = false;
+}
+function refreshBack(){
+  headerBack.classList.toggle('show', panel.classList.contains('open') && !app.classList.contains('fullscreen'));
+}
+
+function getSideCoords(node, side) {
+  const x = node.x || 0;
+  const y = node.y || 0;
+  const w = node.width || 100;
+  const h = node.height || 100;
+  if (side === 'left') return { x, y: y + h/2 };
+  if (side === 'right') return { x: x + w, y: y + h/2 };
+  if (side === 'top') return { x: x + w/2, y };
+  if (side === 'bottom') return { x: x + w/2, y: y + h };
+  return { x: x + w/2, y: y + h/2 };
+}
+
+let canvasZoom;
+function openCanvas(d){
+  if (!d || !canvases[d.id] || !canvases[d.id].data) return;
+  selectedId = d.id; // Keep selectedId for consistency
+  fullscreenFromPanel = false; // Canvas opens directly to fullscreen
+  app.classList.add('fullscreen');
+  fsTitle.textContent = d.label;
+  fsContent.innerHTML = ''; // Clear content for SVG
+  fs.classList.add('on'); // Show container first so correct offsets are read for fit-to-screen
+  canvasControls.style.display = 'flex'; // Show canvas controls
+
+  const cdata = canvases[d.id].data;
+  const csvg = d3.select('#fs-content').append('svg').attr('class','canvas-svg');
+
+  // Define arrow markers for edges
+  csvg.append('defs').append('marker')
+    .attr('id', 'arrowhead')
+    .attr('viewBox', '-0 -5 10 10')
+    .attr('refX', 8) // move arrowhead closer to node
+    .attr('refY', 0)
+    .attr('orient', 'auto')
+    .attr('markerWidth', 5)
+    .attr('markerHeight', 5)
+    .append('path')
+    .attr('d', 'M 0 -5 L 10 0 L 0 5 z');
+
+  const czoomG = csvg.append('g');
+  canvasZoom = d3.zoom().scaleExtent([0.1, 10]).on('zoom', ev => {
+    czoomG.attr('transform', ev.transform);
+  });
+  csvg.call(canvasZoom);
+
+  const nodeG = czoomG.append('g').attr('class', 'canvas-nodes');
+  const edgeG = czoomG.append('g').attr('class', 'canvas-edges');
+
+  // Render nodes
+  nodeG.selectAll('g.canvas-node')
+    .data(cdata.nodes)
+    .join('g')
+    .attr('class', 'canvas-node')
+    .attr('transform', d => `translate(${d.x||0},${d.y||0})`)
+    .each(function(d) {
+      const g = d3.select(this);
+      const strokeColor = d.color ? (GRAPH_COLORS[d.color] || d.color) : 'var(--border)';
+
+      if (d.type === 'file') {
+        if (IMG_EXT.test(d.file)) {
+          const src = resolveImage(d.file);
+          if (src) g.append('image')
+            .attr('xlink:href', src)
+            .attr('width', d.width||100)
+            .attr('height', d.height||100)
+            .style('outline', `1px solid ${strokeColor}`);
+        } else { // Assume it's a note file
+          const noteId = resolveTarget(d.file.replace(/\.md$/, ''));
+          g.append('rect')
+            .attr('width', d.width||100).attr('height', d.height||100)
+            .attr('stroke', strokeColor);
+          g.append('foreignObject')
+            .attr('width', d.width||100).attr('height', d.height||100)
+            .html(noteId && byId[noteId] ? `<div style="padding:5px;font-size:11px;color:var(--fg);overflow:hidden;height:100%">${byId[noteId].label}</div>` : `<div style="padding:5px;font-size:11px;color:var(--muted);overflow:hidden;height:100%">${d.file}</div>`);
+        }
+      } else if (d.type === 'text') {
+        g.append('rect')
+          .attr('width', d.width||100).attr('height', d.height||100)
+          .attr('stroke', strokeColor);
+        g.append('foreignObject')
+          .attr('width', d.width||100).attr('height', d.height||100)
+          .html(`<div style="padding:8px;font-size:13px;color:var(--fg);overflow:auto;height:100%;line-height:1.4;">${renderMarkdown(d.text||'')}</div>`);
+      } else if (d.type === 'group') {
+        g.append('rect')
+          .attr('width', d.width||100).attr('height', d.height||100)
+          .attr('stroke', strokeColor)
+          .attr('fill', 'rgba(122,162,247,.05)');
+        if (d.label) {
+          g.append('text')
+            .attr('x', 8)
+            .attr('y', -8)
+            .attr('font-size', '14px')
+            .attr('font-weight', '600')
+            .attr('fill', 'var(--muted)')
+            .text(d.label);
+        }
+      } else if (d.type === 'link') {
+        g.append('rect')
+          .attr('width', d.width||100).attr('height', d.height||100)
+          .attr('stroke', strokeColor);
+        g.append('foreignObject')
+          .attr('width', d.width||100).attr('height', d.height||100)
+          .html(`<div style="padding:8px;font-size:11px;overflow:hidden;height:100%;line-height:1.4;"><a href="${escAttr(d.url)}" target="_blank" rel="noopener" style="color:var(--accent);word-break:break-all;font-weight:650;">${esc(d.url)}</a></div>`);
+      }
+    });
+
+  // Render edges
+  const nodeById = Object.fromEntries(cdata.nodes.map(n => [n.id, n]));
+  edgeG.selectAll('g.canvas-edge')
+    .data(cdata.edges)
+    .join('g')
+    .attr('class', 'canvas-edge')
+    .each(function(d) {
+      const sourceNode = nodeById[d.fromNode];
+      const targetNode = nodeById[d.toNode];
+      if (!sourceNode || !targetNode) return;
+
+      const pt1 = getSideCoords(sourceNode, d.fromSide);
+      const pt2 = getSideCoords(targetNode, d.toSide);
+      const x1 = pt1.x, y1 = pt1.y;
+      const x2 = pt2.x, y2 = pt2.y;
+
+      // Basic straight line for now, with arrowhead colored identically
+      d3.select(this).append('path')
+        .attr('d', `M${x1},${y1}L${x2},${y2}`)
+        .attr('stroke', 'currentColor')
+        .style('color', d.color ? (GRAPH_COLORS[d.color] || d.color) : 'var(--border)')
+        .attr('marker-end', 'url(#arrowhead)');
+
+      if (d.label) {
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
+        d3.select(this).append('text')
+          .attr('x', midX)
+          .attr('y', midY)
+          .attr('text-anchor', 'middle')
+          .attr('dy', -5) // offset label slightly above line
+          .text(d.label);
+      }
+    });
+
+  // Fit to screen initially
+  const bbox = czoomG.node().getBBox();
+  const scale = Math.min(
+    fsContent.offsetWidth / bbox.width,
+    fsContent.offsetHeight / bbox.height,
+    1.5 // Cap max initial zoom to avoid over-magnifying small canvases
+  ) * 0.8; // Add some padding
+  const translateX = fsContent.offsetWidth / 2 - (bbox.x + bbox.width / 2) * scale;
+  const translateY = fsContent.offsetHeight / 2 - (bbox.y + bbox.height / 2) * scale;
+  csvg.transition().duration(500).call(
+    canvasZoom.transform, d3.zoomIdentity.translate(translateX, translateY).scale(scale)
+  );
+
+  refreshBack();
+}
+
+// Map Obsidian canvas colors to CSS vars
+const GRAPH_COLORS = {
+  '1': 'var(--accent)',
+  '2': '#10b981',
+  '3': '#f59e0b',
+  '4': '#ec4899',
+  '5': '#8b5cf6',
+  '6': '#06b6d4',
+};
+
+// Canvas zoom controls
+document.getElementById('canvas-zoom-in').addEventListener('click', () => {
+  if (canvasZoom) d3.select('#fs-content svg').transition().duration(200).call(canvasZoom.scaleBy, 1.2);
+});
+document.getElementById('canvas-zoom-out').addEventListener('click', () => {
+  if (canvasZoom) d3.select('#fs-content svg').transition().duration(200).call(canvasZoom.scaleBy, 1 / 1.2);
+});
+document.getElementById('canvas-zoom-fit').addEventListener('click', () => {
+  if (canvasZoom) {
+    const csvg = d3.select('#fs-content svg');
+    const czoomG = csvg.select('g');
+    const bbox = czoomG.node().getBBox();
+    const scale = Math.min(
+      fsContent.offsetWidth / bbox.width,
+      fsContent.offsetHeight / bbox.height,
+      1.5 // Cap max initial zoom
+    ) * 0.8; // Add some padding
+    const translateX = fsContent.offsetWidth / 2 - (bbox.x + bbox.width / 2) * scale;
+    const translateY = fsContent.offsetHeight / 2 - (bbox.y + bbox.height / 2) * scale;
+    csvg.transition().duration(500).call(
+      canvasZoom.transform, d3.zoomIdentity.translate(translateX, translateY).scale(scale)
+    );
+  }
+});
+
+document.getElementById('search').addEventListener('input', e => {
+  const q = e.target.value.trim().toLowerCase();
+  matches = q ? new Set(nodes.filter(n =>
+    (n.label+' '+n.path+' '+(n.tags||[]).join(' ')).toLowerCase().includes(q)).map(n=>n.id)) : null;
+  applyState();
+});
+document.getElementById('reset').addEventListener('click',
+  ()=> svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity));
+document.getElementById('p-close').addEventListener('click', clearSelection);
+window.addEventListener('resize', ()=>{ w=innerWidth; h=innerHeight; svg.attr('viewBox',`0 0 ${w} ${h}`); });
+
+const legend = document.getElementById('legend');
+GRAPH.folders.forEach(f => {
+  const s = document.createElement('span'); s.className='leg';
+  s.innerHTML = `<i style="background:${f.color}"></i>${f.name}`; legend.appendChild(s);
+});
+document.getElementById('count').textContent = nodes.filter(n=>!n.orphan).length + ' notes';
+
+const panel = document.getElementById('panel');
+const headerBack = document.getElementById('back');
+const pFull = document.getElementById('p-full');
+const fs = document.getElementById('fullscreen');
+const fsBack = document.getElementById('fs-back');
+const fsTitle = document.getElementById('fs-title');
+const fsContent = document.getElementById('fs-content');
+const canvasControls = document.getElementById('canvas-controls');
+const rsz = document.getElementById('rsz');
+const pTitle=document.getElementById('p-title'), pMeta=document.getElementById('p-meta');
+const pLinks=document.getElementById('p-links'), pContent=document.getElementById('p-content');
+
+// Left-top Back in the header → graph view. Left-top Back in fullscreen → restore panel.
+headerBack.addEventListener('click', goHome);
+fsBack.addEventListener('click', backFromFullscreen);
+
+// Fullscreen overlay: tapping its content mustn't close it; only Back/Escape do.
+fsContent.addEventListener('click', e => e.stopPropagation());
+fsTitle.addEventListener('click', e => e.stopPropagation());
+
+// Full-screen view of the currently opened note.
+pFull.addEventListener('click', ()=>{ if(selectedId) toFullscreen(byId[selectedId]); });
+
+// Handle clicks on internal wikilinks in markdown content
+pContent.addEventListener('click', ev => {
+  const a = ev.target.closest('a.wl'); if(!a) return; ev.preventDefault();
+  const id = resolveTarget(a.dataset.t);
+  if(id && byId[id]) {
+    if (byId[id].type === 'canvas') openCanvas(byId[id]); // Open canvas directly
+    else selectNode(byId[id]);
+  }
+});
+pLinks.addEventListener('click', ev => {
+  const b = ev.target.closest('button.nodechip'); if(!b) return;
+  if(byId[b.dataset.id]) {
+    if (byId[b.dataset.id].type === 'canvas') openCanvas(byId[b.dataset.id]);
+    else selectNode(byId[b.dataset.id]);
+  }
+});
+function chip(id){ const n=byId[id]; return n ? `<button class="nodechip" data-id="${id}" style="--c:${n.color}">${n.label}</button>` : ''; }
+
+// Resize the side panel by dragging its left edge.
+// The panel is pinned to the right, so dragging the left edge right shrinks it.
+let rszActive=false, rszStartX=0, rszStartW=0;
+const resizeRect = () => panel.getBoundingClientRect();
+document.addEventListener('pointerdown', e=>{
+  const r = resizeRect();
+  if(e.clientX <= r.left + 12){ rszActive=true; rszStartX=e.clientX; rszStartW=panel.offsetWidth; }
+});
+document.addEventListener('pointermove', e=>{
+  if(!rszActive) return;
+  const minW = innerWidth*0.2, maxW = innerWidth*0.6;
+  // left edge moves by (clientX - rszStartX); panel width changes by the negative of that
+  let nw = rszStartW - (e.clientX - rszStartX);
+  nw = Math.max(minW, Math.min(maxW, nw));
+  panel.style.width = nw + 'px';
+});
+document.addEventListener('pointerup', e=>{ rszActive=false; });
+
+// Escape: from fullscreen restore the panel; otherwise go to the graph view.
+window.addEventListener('keydown', e=>{
+  if(e.key==='Escape'){
+    if(app.classList.contains('fullscreen')) backFromFullscreen();
+    else goHome();
+  }
+});
+
+function renderPanel(d){
+  panel.classList.add('open'); pTitle.textContent = d.label;
+  if(d.orphan){
+    pFull.style.display='none';
+    pMeta.innerHTML = `<span class="chip miss">missing note</span>`;
+    const refs = inE[d.id];
+    pLinks.innerHTML = refs.length ? `<div class="lb"><span class="lb-h">Referenced by</span><div class="chiprow">${refs.map(chip).join('')}</div></div>` : '';
+    pContent.innerHTML = `<p class="empty">This note doesn't exist yet — create <code>${d.label}.md</code> in <code>notes/</code> and link to it.</p>`;
+    refreshBack();
+    return;
+  }
+  pFull.style.display='inline-flex';
+  // Hide full view button for canvas nodes, they already open full screen
+  if (d.type === 'canvas') pFull.style.display = 'none';
+  else pFull.style.display = 'inline-flex';
+
+  const tags = (d.tags||[]).map(t => `<span class="chip tag">#${t}</span>`).join('');
+  pMeta.innerHTML = `<span class="chip">${d.path}</span>` +
+    `<span class="chip"><i style="background:${d.color}"></i>${d.folder}</span>` +
+    (d.date ? `<span class="chip">${d.date}</span>` : '') + tags;
+  const outs = outE[d.id], ins = inE[d.id];
+  pLinks.innerHTML =
+    (outs.length?`<div class="lb"><span class="lb-h">Links out</span><div class="chiprow">${outs.map(chip).join('')}</div></div>`:'')+
+    (ins.length?`<div class="lb"><span class="lb-h">Linked by</span><div class="chiprow">${ins.map(chip).join('')}</div></div>`:'');
+  pContent.innerHTML = renderMarkdown(contents[d.id]||'');
+  refreshBack();
+}
+
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function escAttr(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function inline(text, depth=0){
+  text = esc(text);
+  text = text.replace(/`([^`]+)`/g,'<code>$1</code>');
+  // Obsidian image / note embeds: `![[file.png]]` or `![[Note]]`.
+  // Images render inline; other targets transclude the linked note (depth-limited).
+  text = text.replace(/!\[\[([^\]]+)\]\]/g, (m, inner) => {
+    const p = inner.split('|'), tgt = p[0].trim(), alt = (p[1]||'').trim();
+    if (IMG_EXT.test(tgt)) {
+      const src = resolveImage(tgt);
+      if (src) return `<img class="embed" src="${escAttr(src)}" alt="${escAttr(alt||tgt)}">`;
+      return `<span class="tag">embed image: ${tgt}</span>`;
+    }
+    const id = resolveTarget(tgt);
+    if (id && byId[id] && contents[id] && depth < 3) {
+      return `<div class="embed-note"><div class="embed-note-head">${esc(byId[id].label)}</div>`
+           + renderMarkdown(contents[id], depth+1) + '</div>';
+    }
+    // Fallback for unrecognized embeds, e.g. ![[VLAN_ARP_FLOW.canvas]]
+    if (id && byId[id] && byId[id].type === 'canvas') {
+      return `<span class="tag">canvas embed: ${tgt}</span>`; // Or a placeholder / icon
+    }
+    return `<span class="tag">[[${tgt}]]</span>`;
+  });
+  text = text.replace(/\[\[([^\]]+)\]\]/g,(m,inner)=>{
+    const p=inner.split('|'), tgt=p[0].trim(), lbl=(p[1]||tgt).trim();
+    return `<a class="wl" data-t="${escAttr(tgt)}" href="#">${esc(lbl)}</a>`;
+  });
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+  text = text.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+  text = text.replace(/(^|[^*])\*([^*]+)\*/g,'$1<em>$2</em>');
+  text = text.replace(/(^|\s)#([a-z][\w-]*(\/[\w-]+)*)/gi,'$1<span class="tag">#$2</span>');
+  return text;
+}
+function renderMarkdown(md, depth=0){
+  const lines = md.replace(/\r\n/g,'\n').split('\n');
+  let html='', i=0, para=[];
+  const flush=()=>{ if(para.length){ html+='<p>'+inline(para.join(' '), depth)+'</p>'; para=[]; } };
+  while(i<lines.length){
+    const line=lines[i];
+    if(/^```/.test(line)){
+      flush(); let buf=''; i++;
+      while(i<lines.length && !/^```/.test(lines[i])){ buf+=lines[i]+'\n'; i++; }
+      if(i<lines.length) i++;
+      html+='<pre><code>'+esc(buf.replace(/\n$/,''))+'</code></pre>'; continue;
+    }
+    const h=line.match(/^(#{1,6})\s+(.*)$/);
+    if(h){ flush(); html+='<h'+h[1].length+'>'+inline(h[2],depth)+'</h'+h[1].length+'>'; i++; continue; }
+    if(/^\s*[-*]\s+/.test(line)){
+      flush(); let it='';
+      while(i<lines.length && /^\s*[-*]\s+/.test(lines[i])){ it+='<li>'+inline(lines[i].replace(/^\s*[-*]\s+/,''),depth)+'</li>'; i++; }
+      html+='<ul>'+it+'</ul>'; continue;
+    }
+    if(/^\s*\d+\.\s+/.test(line)){
+      flush(); let it='';
+      while(i<lines.length && /^\s*\d+\.\s+/.test(lines[i])){ it+='<li>'+inline(lines[i].replace(/^\s*\d+\.\s+/,''),depth)+'</li>'; i++; }
+      html+='<ol>'+it+'</ol>'; continue;
+    }
+    if(/^\s*$/.test(line)){ flush(); i++; continue; }
+    para.push(line); i++;
+  }
+  flush(); return html;
+}
+
+refreshBack();
+applyState();
+</script>
+</body>
+</html>
