@@ -47,33 +47,33 @@ const CanvasNodeComponent: React.FC<NodeProps> = ({ data }) => {
       : null;
 
   return (
-    <div className="bg-slate-800/95 border border-slate-700/80 rounded-xl p-3 shadow-xl text-xs text-slate-200 min-w-[180px] max-w-[500px] h-full flex flex-col justify-between overflow-hidden">
+    <div className="bg-slate-800/95 border border-slate-700/80 rounded-xl p-2.5 shadow-xl text-xs text-slate-200 w-full h-full flex flex-col justify-between overflow-hidden box-border">
       <Handle type="target" position={Position.Top} className="!bg-amber-400 !w-2.5 !h-2.5" />
       <Handle type="target" position={Position.Left} className="!bg-amber-400 !w-2.5 !h-2.5" />
 
-      <div className="h-full flex flex-col justify-between">
-        <div className="flex items-center justify-between gap-2 border-b border-slate-700/60 pb-1.5 mb-2">
+      <div className="w-full h-full flex flex-col justify-between overflow-hidden">
+        <div className="flex items-center justify-between gap-2 border-b border-slate-700/60 pb-1 mb-1 shrink-0">
           <span className="font-semibold text-amber-300 truncate">
             {nodeData.label || nodeData.file || nodeData.type || 'Card'}
           </span>
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-900/80 text-slate-400 border border-slate-800">
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-900/80 text-slate-400 border border-slate-800 shrink-0">
             {nodeData.type || (isImageFile ? 'image' : 'text')}
           </span>
         </div>
 
         {nodeData.text && (
-          <div className="text-slate-300 whitespace-pre-wrap font-sans text-xs leading-relaxed max-h-[300px] overflow-y-auto pr-1">
+          <div className="text-slate-300 whitespace-pre-wrap font-sans text-xs leading-relaxed overflow-y-auto pr-1 flex-1">
             {nodeData.text}
           </div>
         )}
 
         {isImageFile && (
-          <div className="flex-1 flex items-center justify-center bg-slate-950/60 rounded border border-slate-800 overflow-hidden my-1 p-1">
+          <div className="flex-1 min-h-0 w-full flex items-center justify-center bg-slate-950/60 rounded border border-slate-800 overflow-hidden my-0.5 p-0.5">
             {resolvedImgSrc ? (
               <img
                 src={resolvedImgSrc}
                 alt={nodeData.file}
-                className="max-h-[350px] w-auto max-w-full object-contain rounded"
+                className="w-full h-full object-contain rounded"
               />
             ) : (
               <div className="text-amber-400/80 italic font-mono text-[11px] p-2 text-center">

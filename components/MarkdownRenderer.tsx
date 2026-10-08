@@ -165,7 +165,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     const processString = (
       inputNodes: React.ReactNode[],
       regex: RegExp,
-      renderFn: (captured: string, idx: number) => React.ReactNode
+      renderFn: (captured: string, idx: number, match: RegExpExecArray) => React.ReactNode
     ): React.ReactNode[] => {
       const output: React.ReactNode[] = [];
       inputNodes.forEach((node, nodeIdx) => {
@@ -182,7 +182,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
           if (m.index > lIdx) {
             output.push(node.substring(lIdx, m.index));
           }
-          output.push(renderFn(m[1] || m[0], nodeIdx + m.index));
+          output.push(renderFn(m[2] !== undefined ? m[2] : (m[1] !== undefined ? m[1] : m[0]), nodeIdx + m.index, m));
           lIdx = re.lastIndex;
         }
 
@@ -238,7 +238,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     // Step 5: Bold **bold** or __bold__
     const step5Bold = processString(
       step4HL,
-      /(\*\*|__)(.*?)\1/g,
+      /(\*\*|__)(.+?)\1/g,
       (boldText, idx) => (
         <strong key={`${keyPrefix}-bold-${idx}`} className="font-bold text-slate-100">
           {boldText}
@@ -249,7 +249,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     // Step 6: Italic *italic* or _italic_
     const step6Italic = processString(
       step5Bold,
-      /(\*|_)(.*?)\1/g,
+      /(?<!\*|_)(\*|_)(?!\*|_)(.+?)(?<!\*|_)\1(?!\*|_)/g,
       (italicText, idx) => (
         <em key={`${keyPrefix}-italic-${idx}`} className="italic text-slate-200">
           {italicText}
