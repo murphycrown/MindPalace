@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { Wikilink } from './Wikilink';
-import { norm, normLoose } from '@/lib/utils';
+import { norm, normLoose, resolveImage } from '@/lib/utils';
 
 interface MarkdownRendererProps {
   content: string;
@@ -17,7 +17,6 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   images = {},
   onNavigateNote,
 }) => {
-  // Parse markdown body line-by-line or token-based to process Obsidian features (wikilinks, callouts, math, code blocks)
   const renderedElements = useMemo(() => {
     if (!content) return null;
 
@@ -25,11 +24,10 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     const elements: React.ReactNode[] = [];
     let inCodeBlock = false;
     let codeBlockBuffer: string[] = [];
-    let codeBlockLang = '';
 
-    const processTextWithWikilinks = (text: string, keyPrefix: string): React.ReactNode[] => {
-      // Matches [[target]] or [[target|alias]]
-      const regex = /\[\[([^\]]+)\]\]/g;
+    const processTextWithWikilinksAndImages = (text: string, keyPrefix: string): React.ReactNode[] => {
+      // Matches ![[image.png]] or [[target]] / [[target|alias]]
+      const regex = /(!?)\[\[([^\]]+)\]\]/g;
       const parts: React.ReactNode[] = [];
       let lastIndex = 0;
       let match: RegExpExecArray | null;
@@ -39,28 +37,53 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
           parts.push(text.substring(lastIndex, match.index));
         }
 
-        const rawTarget = match[1];
-        const [targetPart, aliasPart] = rawTarget.split('|').map((s) => s.trim());
-        const alias = aliasPart || targetPart;
+        const isEmbed = match[1] === '!';
+        const rawTarget = match[2];
 
-        const strict = norm(targetPart);
-        const loose = normLoose(targetPart);
-        const resolvedId = aliases[strict] || aliases[loose];
-        const isOrphan = !resolvedId;
+        if (isEmbed) {
+          const imgPath = resolveImage(rawTarget, images);
+          if (imgPath) {
+            parts.push(
+              <img
+                key={`${keyPrefix}-img-${match.index}`}
+                src={imgPath}
+                alt={rawTarget}
+                className="my-3 max-w-full rounded-lg border border-slate-800 shadow-lg object-contain max-h-96"
+              />
+            );
+          } else {
+            parts.push(
+              <span
+                key={`${keyPrefix}-missing-img-${match.index}`}
+                className="text-xs text-amber-400/80 italic font-mono bg-slate-900 px-2 py-1 rounded border border-slate-800"
+              >
+                [Embedded image missing: {rawTarget}]
+              </span>
+            );
+          }
+        } else {
+          const [targetPart, aliasPart] = rawTarget.split('|').map((s) => s.trim());
+          const alias = aliasPart || targetPart;
 
-        parts.push(
-          <Wikilink
-            key={`${keyPrefix}-wiki-${match.index}`}
-            target={targetPart}
-            alias={alias}
-            isOrphan={isOrphan}
-            onClick={() => {
-              if (resolvedId && onNavigateNote) {
-                onNavigateNote(resolvedId);
-              }
-            }}
-          />
-        );
+          const strict = norm(targetPart);
+          const loose = normLoose(targetPart);
+          const resolvedId = aliases[strict] || aliases[loose];
+          const isOrphan = !resolvedId;
+
+          parts.push(
+            <Wikilink
+              key={`${keyPrefix}-wiki-${match.index}`}
+              target={targetPart}
+              alias={alias}
+              isOrphan={isOrphan}
+              onClick={() => {
+                if (resolvedId && onNavigateNote) {
+                  onNavigateNote(resolvedId);
+                }
+              }}
+            />
+          );
+        }
 
         lastIndex = regex.lastIndex;
       }
@@ -90,7 +113,6 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
           inCodeBlock = false;
         } else {
           inCodeBlock = true;
-          codeBlockLang = line.slice(3).trim();
         }
         continue;
       }
@@ -100,7 +122,24 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
         continue;
       }
 
-      // Obsidian Callouts: > [!NOTE] Title
+      // Standard markdown images: ![alt](path)
+      const mdImgMatch = line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+      if (mdImgMatch) {
+        const alt = mdImgMatch[1];
+        const rawPath = mdImgMatch[2];
+        const imgPath = resolveImage(rawPath, images) || rawPath;
+        elements.push(
+          <img
+            key={`md-img-${i}`}
+            src={imgPath}
+            alt={alt}
+            className="my-3 max-w-full rounded-lg border border-slate-800 shadow-lg object-contain max-h-96"
+          />
+        );
+        continue;
+      }
+
+      // Callouts: > [!NOTE] Title
       if (line.startsWith('> [!')) {
         const calloutMatch = line.match(/^>\s*\[!([A-Za-z]+)\]\s*(.*)$/);
         if (calloutMatch) {
@@ -122,7 +161,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       if (line.startsWith('# ')) {
         elements.push(
           <h1 key={`h1-${i}`} className="text-xl font-bold text-slate-100 my-3">
-            {processTextWithWikilinks(line.substring(2), `h1-${i}`)}
+            {processTextWithWikilinksAndImages(line.substring(2), `h1-${i}`)}
           </h1>
         );
         continue;
@@ -130,7 +169,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       if (line.startsWith('## ')) {
         elements.push(
           <h2 key={`h2-${i}`} className="text-lg font-bold text-slate-200 my-2">
-            {processTextWithWikilinks(line.substring(3), `h2-${i}`)}
+            {processTextWithWikilinksAndImages(line.substring(3), `h2-${i}`)}
           </h2>
         );
         continue;
@@ -138,7 +177,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       if (line.startsWith('### ')) {
         elements.push(
           <h3 key={`h3-${i}`} className="text-base font-semibold text-slate-300 my-2">
-            {processTextWithWikilinks(line.substring(4), `h3-${i}`)}
+            {processTextWithWikilinksAndImages(line.substring(4), `h3-${i}`)}
           </h3>
         );
         continue;
@@ -149,7 +188,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
         const itemContent = line.trim().substring(2);
         elements.push(
           <li key={`li-${i}`} className="ml-4 list-disc text-sm text-slate-300 my-1">
-            {processTextWithWikilinks(itemContent, `li-${i}`)}
+            {processTextWithWikilinksAndImages(itemContent, `li-${i}`)}
           </li>
         );
         continue;
@@ -161,7 +200,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       } else {
         elements.push(
           <p key={`p-${i}`} className="text-sm text-slate-300 leading-relaxed my-1">
-            {processTextWithWikilinks(line, `p-${i}`)}
+            {processTextWithWikilinksAndImages(line, `p-${i}`)}
           </p>
         );
       }

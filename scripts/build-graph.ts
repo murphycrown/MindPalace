@@ -4,9 +4,11 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { glob } from 'glob';
 import matter from 'gray-matter';
+const REPO_URL = 'https://github.com/murphycrown/CCNA_PREPARATION.git';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -133,6 +135,31 @@ interface GraphData {
 }
 
 async function main() {
+  // Sync notes from GitHub repository if requested or notes/ is empty/outdated
+  try {
+    const tempDir = path.join(ROOT, 'temp_sync_repo');
+    if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
+    console.log(`fetching CCNA preparation notes from ${REPO_URL}...`);
+    execSync(`git clone ${REPO_URL} "${tempDir}"`, { stdio: 'pipe' });
+
+    const repoNotes = path.join(tempDir, 'notes');
+    if (fs.existsSync(repoNotes)) {
+      fs.mkdirSync(NOTES, { recursive: true });
+      fs.cpSync(repoNotes, NOTES, { recursive: true });
+      console.log('successfully synced CCNA notes into notes/');
+    }
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  } catch (err) {
+    console.warn('could not fetch notes from remote repo, proceeding with local notes:', err);
+  }
+
+  // Copy images to public/notes for static web serving
+  const publicNotes = path.join(OUT_DIR, 'notes');
+  if (fs.existsSync(path.join(NOTES, 'Images'))) {
+    fs.mkdirSync(publicNotes, { recursive: true });
+    fs.cpSync(path.join(NOTES, 'Images'), path.join(publicNotes, 'Images'), { recursive: true });
+  }
+
   if (!fs.existsSync(NOTES)) {
     console.error('notes directory not found:', NOTES);
     process.exit(1);
