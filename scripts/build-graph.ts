@@ -340,8 +340,8 @@ async function main() {
 
   const graphJson = JSON.stringify(graph)
     .replace(/</g, '\\u003c')
-    .replace(/ /g, '\\u2028')
-    .replace(/ /g, '\\u2029');
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(OUT, graphJson);
