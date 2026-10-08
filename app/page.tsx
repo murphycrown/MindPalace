@@ -200,6 +200,9 @@ export default function Home() {
       {selectedCanvas && (
         <CanvasViewer
           canvas={selectedCanvas}
+          images={graphData.images}
+          aliases={graphData.aliases}
+          onNavigateNote={(id) => setSelectedNodeId(id)}
           onClose={() => setSelectedNodeId(null)}
         />
       )}

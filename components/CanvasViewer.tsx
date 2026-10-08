@@ -14,12 +14,17 @@ import {
 import '@xyflow/react/dist/style.css';
 import { CanvasData } from '@/lib/graph-types';
 
+import { resolveImage } from '@/lib/utils';
+
 interface CanvasViewerProps {
   canvas: CanvasData;
+  images?: Record<string, string>;
+  aliases?: Record<string, string>;
+  onNavigateNote?: (nodeId: string) => void;
   onClose: () => void;
 }
 
-// Custom Node for Canvas cards/notes
+// Custom Node for Canvas cards/notes/files/images
 const CanvasNodeComponent: React.FC<NodeProps> = ({ data }) => {
   const nodeData = data as {
     label?: string;
@@ -28,20 +33,31 @@ const CanvasNodeComponent: React.FC<NodeProps> = ({ data }) => {
     file?: string;
     url?: string;
     color?: string;
+    images?: Record<string, string>;
+    aliases?: Record<string, string>;
+    onNavigateNote?: (nodeId: string) => void;
   };
 
+  const isImageFile = nodeData.file && /\.(png|jpe?g|gif|svg|webp|avif|bmp)$/i.test(nodeData.file);
+  const resolvedImgSrc = isImageFile && nodeData.images ? resolveImage(nodeData.file!, nodeData.images) : null;
+
+  const resolvedNoteId =
+    nodeData.file && !isImageFile && nodeData.aliases
+      ? nodeData.aliases[nodeData.file.replace(/\.md$/, '').toLowerCase()]
+      : null;
+
   return (
-    <div className="bg-slate-800/95 border border-slate-700/80 rounded-xl p-3 shadow-xl text-xs text-slate-200 min-w-[180px] max-w-[400px] h-full flex flex-col justify-between">
+    <div className="bg-slate-800/95 border border-slate-700/80 rounded-xl p-3 shadow-xl text-xs text-slate-200 min-w-[180px] max-w-[500px] h-full flex flex-col justify-between overflow-hidden">
       <Handle type="target" position={Position.Top} className="!bg-amber-400 !w-2.5 !h-2.5" />
       <Handle type="target" position={Position.Left} className="!bg-amber-400 !w-2.5 !h-2.5" />
 
-      <div>
+      <div className="h-full flex flex-col justify-between">
         <div className="flex items-center justify-between gap-2 border-b border-slate-700/60 pb-1.5 mb-2">
           <span className="font-semibold text-amber-300 truncate">
             {nodeData.label || nodeData.file || nodeData.type || 'Card'}
           </span>
           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-900/80 text-slate-400 border border-slate-800">
-            {nodeData.type || 'text'}
+            {nodeData.type || (isImageFile ? 'image' : 'text')}
           </span>
         </div>
 
@@ -51,10 +67,38 @@ const CanvasNodeComponent: React.FC<NodeProps> = ({ data }) => {
           </div>
         )}
 
-        {nodeData.file && (
-          <div className="text-blue-400 font-mono text-[11px] bg-slate-900/60 p-1.5 rounded border border-slate-800 flex items-center gap-1">
-            <span>📄</span>
-            <span className="truncate">{nodeData.file}</span>
+        {isImageFile && (
+          <div className="flex-1 flex items-center justify-center bg-slate-950/60 rounded border border-slate-800 overflow-hidden my-1 p-1">
+            {resolvedImgSrc ? (
+              <img
+                src={resolvedImgSrc}
+                alt={nodeData.file}
+                className="max-h-[350px] w-auto max-w-full object-contain rounded"
+              />
+            ) : (
+              <div className="text-amber-400/80 italic font-mono text-[11px] p-2 text-center">
+                📷 {nodeData.file}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!isImageFile && nodeData.file && (
+          <div className="my-1">
+            {resolvedNoteId && nodeData.onNavigateNote ? (
+              <button
+                onClick={() => nodeData.onNavigateNote!(resolvedNoteId)}
+                className="w-full text-left text-blue-400 hover:text-blue-300 font-mono text-[11px] bg-slate-900/80 hover:bg-slate-900 p-2 rounded border border-slate-800 transition-colors flex items-center gap-1.5 truncate"
+              >
+                <span>📄</span>
+                <span className="truncate">{nodeData.file}</span>
+              </button>
+            ) : (
+              <div className="text-blue-400 font-mono text-[11px] bg-slate-900/60 p-2 rounded border border-slate-800 flex items-center gap-1.5">
+                <span>📄</span>
+                <span className="truncate">{nodeData.file}</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -63,7 +107,7 @@ const CanvasNodeComponent: React.FC<NodeProps> = ({ data }) => {
             href={nodeData.url}
             target="_blank"
             rel="noreferrer"
-            className="text-blue-400 underline font-mono text-[11px] truncate block hover:text-blue-300"
+            className="text-blue-400 underline font-mono text-[11px] truncate block hover:text-blue-300 my-1"
           >
             🔗 {nodeData.url}
           </a>
@@ -82,6 +126,9 @@ const nodeTypes = {
 
 export const CanvasViewer: React.FC<CanvasViewerProps> = ({
   canvas,
+  images = {},
+  aliases = {},
+  onNavigateNote,
   onClose,
 }) => {
   const rawNodes = canvas.data?.nodes || [];
@@ -93,8 +140,8 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
       type: 'canvasCard',
       position: { x: n.x, y: n.y },
       style: {
-        width: n.width || 250,
-        height: n.height || 150,
+        width: n.width || 320,
+        height: n.height || 220,
       },
       data: {
         label: n.label,
@@ -103,9 +150,12 @@ export const CanvasViewer: React.FC<CanvasViewerProps> = ({
         file: n.file,
         url: n.url,
         color: n.color,
+        images,
+        aliases,
+        onNavigateNote,
       },
     }));
-  }, [rawNodes]);
+  }, [rawNodes, images, aliases, onNavigateNote]);
 
   const flowEdges: Edge[] = useMemo(() => {
     return rawEdges.map((e) => ({
