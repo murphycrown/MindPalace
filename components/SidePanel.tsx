@@ -18,6 +18,39 @@ export const SidePanel: React.FC<SidePanelProps> = ({
   onNavigateNote,
 }) => {
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [panelWidth, setPanelWidth] = useState(480);
+  const [isResizing, setIsResizing] = useState(false);
+
+  const startResizing = React.useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  React.useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+      const newWidth = window.innerWidth - e.clientX;
+      const minWidth = 320;
+      const maxWidth = Math.min(1200, window.innerWidth * 0.85);
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        setPanelWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
 
   const node = useMemo(() => {
     return graphData.nodes.find((n) => n.id === nodeId) || null;
@@ -159,7 +192,21 @@ export const SidePanel: React.FC<SidePanelProps> = ({
   }
 
   return (
-    <div className="fixed top-0 right-0 h-screen w-96 bg-slate-900 border-l border-slate-800 shadow-2xl z-30 flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
+    <div
+      style={{ width: `${panelWidth}px` }}
+      className={`fixed top-0 right-0 h-screen bg-slate-900 border-l border-slate-800 shadow-2xl z-30 flex flex-col overflow-hidden animate-in slide-in-from-right duration-200 ${
+        isResizing ? 'select-none' : ''
+      }`}
+    >
+      {/* Drag Resize Handle */}
+      <div
+        onMouseDown={startResizing}
+        className="absolute top-0 bottom-0 left-0 w-1.5 cursor-col-resize hover:bg-blue-500/50 active:bg-blue-500 transition-colors z-40 group flex items-center justify-center"
+        title="Drag to resize panel width"
+      >
+        <div className="w-0.5 h-8 bg-slate-600 group-hover:bg-blue-400 rounded-full" />
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-900/90">
         <div>

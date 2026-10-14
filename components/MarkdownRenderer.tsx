@@ -64,6 +64,92 @@ const CalloutBlock: React.FC<{
   );
 };
 
+interface ListItemData {
+  indent: number;
+  type: 'unordered' | 'ordered' | 'task';
+  marker: string;
+  checked?: boolean;
+  text: string;
+}
+
+interface TreeNode {
+  item: ListItemData;
+  children: TreeNode[];
+}
+
+function getListInfo(line: string): ListItemData | null {
+  const indentMatch = line.match(/^(\s*)/);
+  if (!indentMatch) return null;
+
+  const rawIndent = indentMatch[1];
+  let indent = 0;
+  for (const char of rawIndent) {
+    if (char === '\t') indent += 4;
+    else indent += 1;
+  }
+
+  const trimmedLine = line.trim();
+
+  // Task list match: - [ ] text or - [x] text
+  const taskMatch = trimmedLine.match(/^([-*+])\s+\[([ xX])\]\s*(.*)$/);
+  if (taskMatch) {
+    return {
+      indent,
+      type: 'task',
+      marker: taskMatch[1],
+      checked: taskMatch[2].toLowerCase() === 'x',
+      text: taskMatch[3],
+    };
+  }
+
+  // Ordered list match: 1. text or 1) text
+  const orderedMatch = trimmedLine.match(/^(\d+[\.\)])\s+(.*)$/);
+  if (orderedMatch) {
+    return {
+      indent,
+      type: 'ordered',
+      marker: orderedMatch[1],
+      text: orderedMatch[2],
+    };
+  }
+
+  // Unordered list match: - text or * text or + text
+  const unorderedMatch = trimmedLine.match(/^([-*+])\s+(.*)$/);
+  if (unorderedMatch) {
+    return {
+      indent,
+      type: 'unordered',
+      marker: unorderedMatch[1],
+      text: unorderedMatch[2],
+    };
+  }
+
+  return null;
+}
+
+function buildListTree(items: ListItemData[]): TreeNode[] {
+  const rootNodes: TreeNode[] = [];
+  const stack: { node: TreeNode; indent: number }[] = [];
+
+  for (const item of items) {
+    const newNode: TreeNode = { item, children: [] };
+
+    while (stack.length > 0 && item.indent <= stack[stack.length - 1].indent) {
+      stack.pop();
+    }
+
+    if (stack.length === 0) {
+      rootNodes.push(newNode);
+    } else {
+      stack[stack.length - 1].node.children.push(newNode);
+    }
+
+    stack.push({ node: newNode, indent: item.indent });
+  }
+
+  return rootNodes;
+}
+
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   content,
   aliases = {},
@@ -300,6 +386,47 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
     );
 
     return step9Tags;
+  };
+
+  const renderListTree = (treeNodes: TreeNode[], keyPrefix: string, depth = 0): React.ReactNode => {
+    return treeNodes.map((node, index) => {
+      const { item, children } = node;
+      const key = `${keyPrefix}-${index}`;
+
+      return (
+        <div key={key} className="my-1">
+          <div className="flex items-start gap-2">
+            {item.type === 'task' ? (
+              <input
+                type="checkbox"
+                checked={item.checked}
+                readOnly
+                className="mt-1 rounded bg-slate-800 border-slate-700 text-blue-500 focus:ring-0 shrink-0"
+              />
+            ) : item.type === 'ordered' ? (
+              <span className="font-mono text-xs text-slate-400 shrink-0 min-w-[1.25rem] text-right">
+                {item.marker}
+              </span>
+            ) : (
+              <span className="text-slate-400 shrink-0 font-bold select-none text-xs leading-relaxed">
+                •
+              </span>
+            )}
+            <div className="flex-1 text-slate-200 text-sm leading-relaxed">
+              <span className={item.type === 'task' && item.checked ? 'line-through text-slate-500' : ''}>
+                {processFormattedText(item.text, key)}
+              </span>
+            </div>
+          </div>
+
+          {children.length > 0 && (
+            <div className="ml-3 pl-3.5 border-l border-slate-800 my-1 space-y-1">
+              {renderListTree(children, `${key}-child`, depth + 1)}
+            </div>
+          )}
+        </div>
+      );
+    });
   };
 
   const renderedElements = useMemo(() => {
@@ -558,13 +685,48 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
         continue;
       }
 
-      // Unordered lists
-      if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
-        const itemContent = line.trim().substring(2);
+      // List items (unordered, ordered, task)
+      const listInfo = getListInfo(line);
+      if (listInfo) {
+        const listItems: ListItemData[] = [];
+
+        while (i < lines.length) {
+          const currentLine = lines[i];
+          if (currentLine.trim() === '') {
+            // Check if next non-empty line is a list item
+            if (i + 1 < lines.length && getListInfo(lines[i + 1])) {
+              i++;
+              const nextInfo = getListInfo(lines[i]);
+              if (nextInfo) {
+                listItems.push(nextInfo);
+                i++;
+                continue;
+              }
+            }
+            break;
+          }
+
+          const info = getListInfo(currentLine);
+          if (info) {
+            listItems.push(info);
+            i++;
+          } else {
+            // Indented continuation line for the previous item
+            if (listItems.length > 0 && currentLine.startsWith(' ')) {
+              listItems[listItems.length - 1].text += ' ' + currentLine.trim();
+              i++;
+            } else {
+              break;
+            }
+          }
+        }
+        i--; // Adjust index after lookahead loop
+
+        const listTree = buildListTree(listItems);
         elements.push(
-          <li key={`li-${i}`} className="ml-4 list-disc text-sm text-slate-300 my-1">
-            {processFormattedText(itemContent, `li-${i}`)}
-          </li>
+          <div key={`list-tree-${i}`} className="my-2 space-y-1 text-sm text-slate-300">
+            {renderListTree(listTree, `list-${i}`)}
+          </div>
         );
         continue;
       }
@@ -574,7 +736,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
         elements.push(<div key={`empty-${i}`} className="h-2" />);
       } else {
         elements.push(
-          <p key={`p-${i}`} className="text-sm text-slate-300 leading-relaxed my-1">
+          <p key={`p-${i}`} className="text-sm text-slate-300 leading-relaxed my-1.5">
             {processFormattedText(line, `p-${i}`)}
           </p>
         );
